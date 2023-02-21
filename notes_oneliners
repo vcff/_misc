@@ -1,0 +1,148 @@
+========================================================================================
+H=hostname
+nawk -v Z="$H" '
+  z && /^ al/ { b=0;next }
+  /^ a/ { A=$2; getline; sub("\r","",$1); x[A]=$1;  }
+  /^Def/ { z=1 }
+  /^Eff/ { z=0 }
+  z && /^ zo/ && $2 ~ Z  { print $1"\t"$2; b=1; next }
+  /^ zo/ { b=0; next }
+  b { gsub("[;\r]","",$0); for(i=1;i<=NF;i++)print "\t\t"x[$i]" "$i }
+' /usr/alishow_*  /usr/zoneshow_*
+========================================================================================
+awk 'n=x[$4,$1]{print n"\n"$0;} {x[$4,$1]=$0;}'
+========================================================================================
+_/surfer/_comp
+awk '{key=$1 OFS $1; a[key]=a[key]" "$2; c[key]++} END{for(key in a) { print c[key],key,substr(a[key],2) }}' bbb | sort -k 2,2 | grep -i "00:00:00:00"
+awk '!($1 in a){b[++n]=$1; a[$1]=$2; a[$1]++; next} $1 in a{a[$1] = a[$1]" "$2} END{for (i=1; i<=n; i++) print a[$1], b[i], a[b[i]]}' bbbsortuniq | more
+
+~/surfer/_comp
+awk '{key=$1 OFS $1; a[key]=a[key]" "$2; c[key]++} END{for(key in a) { print c[key],key,substr(a[key],2) }}' bbb | sort -k 2,2 | grep -i "00:00:00:00"
+4 00:00:00:00 00:00:00:00  NAMEB NAMEB NAMEA NAMEA
+
+awk '{ for (i = 12; i <= NF; i++) { if ($i != $12) { print $1,$2,$3,$4,$5,$6,$7, "diff"; next } }; }' fordiff | more | sort | uniq | more
+4 00:00:00:00 00:00:00:00 NAMEB NAMEB NAMEA NAMEA diff
+4 00:00:00:00 00:00:00:00 X NAMEB NAMEB NAMEB diff
+4 00:00:00:00 00:00:00:00 X NAMEB NAMEB NAMEB diff
+
+~/surfer/_comp
+$ awk '{ key=$1 OFS $2 OFS; c[key]++ }
+     !gsub(","$3,","$3,a[key]) {a[key]=a[key]","$3; }
+     END{for(key in a) { print c[key],key,substr(a[key],2) }}' bbb | sort -k2,2 >> testxx
+
+f1|f2|f3|f4|f5
+aa|bb|cc|gg|ee
+aa|bb|cc|ff|ee
+aa|bb|cc|dd|ee
+aa|bb|cc||ee
+aaa|qq|ccc||eee
+aaa|qq|ccc|zz|eee
+aaa|qq|ccc|zz|eee
+aaa|qq|ccc||eee
+aaa|qq|ccc||eee
+new|test|ccc||eee
+new|test|ccc||eee
+
+
+awk '
+BEGIN{
+  FS=OFS="|"
+}
+FNR==NR{
+  if(!a[$2]){
+    a[$2]=$4
+  }
+  next
+}
+($2 in a) && $4==a[$2]{
+  print $2,$4
+  delete a[$2]
+}'  out  out
+========================================================================================
+svcinfo lshostvdiskmap -nohdr |while read -a h
+do
+  svcinfo lsvdisk ${h[4]}|while read -a v
+  do
+    [[ ${v[0]} =~ ^capacity$ ]] && printf "%15s %15s %5s %s\033[0m\n" ${h[1]} ${h[4]} ${v[1]} ${h[5]}
+    [[ ${v[0]} =~ ^status$ && ${v[1]} =~ ^offline$ ]] && printf "\033[01;31m"
+  done
+done
+========================================================================================
+svc_ip='10.0.0.1'
+
+mdisk_lst=$(ssh $svc_ip lsmdisk)
+bay_lst=($(ssh $svc_ip lscontroller | awk '$2 !~ /controller_name/ {print $2}' | sort -u))
+echo "Bay Count : ${#bay_lst[@]}"
+for bay in ${bay_lst[@]}; do 
+  total_mdisk=$(echo "$mdisk_lst" | grep -wc $bay)
+  unmanaged_mdisk=$(echo "$mdisk_lst" | grep -w $bay | awk '$4 == "unmanaged" {print 1}' | wc -l)
+  managed_mdisk=$(echo "$mdisk_lst" | grep -w $bay | awk '$4 == "managed" {print 1}' | wc -l)
+  image_mdisk=$(echo "$mdisk_lst" | grep -w $bay | awk '$4 == "image" {print 1}' | wc -l)
+  printf "Bay : %-20s > Total:%-3s Unmanaged:%-3s Managed:%-3s Image:%-3s\n" "$bay" "$total_mdisk" "$unmanaged_mdisk" "$managed_mdisk" "$image_mdisk"
+done
+
+========================================================================================
+$1 != prev {
+    if (NR > 1) {
+        prt()
+    }
+    prev = $1
+}
+{
+    key  = $1
+    type = $4
+    if (type == "ROME") {
+        stat = $3
+        fval = $2
+    }
+    else {
+        stat = $2
+        fval = $3
+    }
+    statCnt[stat]++
+    totCnt++
+    pairs = pairs OFS sprintf("%-2s %-2s",stat,fval)
+}
+END { prt() }
+function prt(   stat) {
+    stat = ("LOGGED" in statCnt ? "LOGGED" : "NULL")
+    printf "%d %-2s of %d | %-5s %s%s\n", statCnt[stat], stat, totCnt, type, key, pairs
+    delete statCnt
+    totCnt = 0
+    pairs  = ""
+}
+========================================================================================
+read -a h <<< " xxxxx ";
+for i in ${h[@]}; 
+do lshostvdiskmap -nohdr  $i |while read -a hostmap; 
+do echo ${hostmap[0]} ${hostmap[1]} - `svcinfo lsvdisk -nohdr -filtervalue vdisk_name=${hostmap[4]}`;
+done;
+done;
+
+========================================================================================
+contype() #optimized ver. of contypeoriginal
+{
+	
+	pushd "$_plog" > /dev/null 2>&1;
+	awk '{gsub(/; na/, "");sub(/Device type:/,"Connection"); sub(/Fabric Port Name:/,"Fabric");sub(/Unknown/," "); \
+	sub(/LSAN:/,"LSAN"); sub(/Initiator/,"Initiator"); sub(/Port Index:/,"Index")};{sub(/\r$/,"")}; \
+	$1=="a"{a=$1} $1 ~/^(N|Fabric|Connection|Index)$/{out=out" "$1" "$2" "$3""$4""$5""$6""$7} $1=="LSAN"{print FILENAME a out""$1" "$2; out="";}' *BRO* | \
+	awk '{gsub(/;/, " ")};{$1=$1};1{print $1,$13,$3,$5,$6,$8,$10,$11,$15}' >> "$_comp"/contype;
+	pushd > /dev/null 2>&1;
+	swn
+	#swnprt
+	consw
+}
+========================================================================================
+awk '{$1=$1} \
+     !/^VSAN|^port-wwn|^node|^fc4|^symbolic|^port-t|^fabric|^connected|^switch/ \
+     {next} \
+      gsub(/.name|-wwn|\(vendor) |-types:fc4_features|bolic|ric| interface|\(IP address)/,"",$0) \
+      gsub(/]/,"",$0) \
+      sub(/ :*/,",[",$0) \
+     {sub("\r$","",$0);\
+      sub(/VSAN:/,"VSAN,",$0) \
+      sub(/\[ :/,"[")};{print$0"],"}' xx | \
+      awk  'BEGIN {ORS=""};/VSAN/&&(NR!=0){printf "\n"};\
+            END {print "\n"}1'
+========================================================================================            
