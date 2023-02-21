@@ -1,0 +1,230 @@
+#!/bin/bash -x
+###############################################################
+LANG="en_US.UTF8" ; export LANG
+MYDIR="$(dirname `readlink -f -- $0`)";
+CURDAT="$(date +"%Y%m%d_%H")";
+ALTDAT="$(date +"%M"m"")";
+##############################################################
+typeset -A SVC
+SVC[SVC1]="SVC1"
+SVC[SVC2]="SVC2"
+SVC[SVC3]="SVC3"
+SVC[SVC4]="SVC4"
+#......others
+##############################################################
+mkdir -p "$MYDIR/SVC_ALL/THROTTLE/RUN"
+mkdir -p "$MYDIR/SVC_ALL/THROTTLE/LOG/$CURDAT"
+export SVCRUN="$MYDIR/SVC_ALL/THROTTLE/RUN"
+export SVCLOG="$MYDIR/SVC_ALL/THROTTLE/LOG"
+export SVCNFO="$MYDIR/SVC_ALL/THROTTLE/LOG/$CURDAT"
+export _THLOG="$MYDIR/SVC_ALL/THROTTLE/LOG/ibm_thr_A_"$CURDAT"";
+export _THBSH="$MYDIR/SVC_ALL/THROTTLE/LOG/ibm_thr_B_"$CURDAT"";
+export _THRUN="$MYDIR/SVC_ALL/THROTTLE/RUN/ibm_thr_C_"$CURDAT".sh";
+# SVC     THROTTLE LOG DATE
+# 		  DECOM    LOG DATE
+# 		  RUN
+##############################################################
+USER1=xxx
+PASS2=xxx
+###
+function ob_info () {
+    for i in "${!SVC[@]}"
+    do
+        $(echo | (echo 'svcinfo lsvdisk -delim " " -nohdr -bytes | \
+        cut -d " " -f1,2,7,8' && exit) | \
+        sshpass -p $PASS2 ssh -T $USER1"@"${SVC[$i]} > "$SVCNFO"/"$i") 
+        $(echo | (echo 'lsthrottle -filtervalue throttle_type=vdisk \
+        -delim " " -nohdr' && exit) | \
+        sshpass -p $PASS2 ssh -T $USER1"@"${SVC[$i]} > "$SVCNFO"/"$i".a)
+    done
+}
+###
+function ob_throttle () {
+    pushd "$SVCNFO" >/dev/null 2>&1;
+    if [ "$(ls -A $SVCNFO)" ]; then
+        echo "Directory is not Empty, running.."
+    else
+        echo "Directory is Empty, exiting.."
+        exit 1
+    fi
+    for i in "${!SVC[@]}"
+    do
+        awk 'FNR==NR{a[$3]=$0;next}; \
+            {printf FILENAME "%s %s %s %s %1.f %s\n", \
+            "",$1,$2,$3,$4/2**30,$5 (($1 in a)?a[$1]: \
+            "NA NA NA NA NA NA")}' "$i".a "$i" >> "$_THLOG"
+    done
+}
+###
+function ob_vals () {
+    pushd "$SVCLOG" >/dev/null 2>&1;
+    if [ -e "$_THLOG" ]; then
+        echo "File is present, running.."
+    else
+        echo "File is not present, exiting.."
+        exit 1
+    fi
+    awk '{if ($3 ~ /_T1/ && !/DONOT|_T0|NA NA/) \
+    { $12=(($5>100 && $5<=200)?($5*8.5+0.005): \
+           ($5>200 && $5<=1000?($5*7.5+0.005): \
+           ($5>1000)?($5*5+0.005):850)); \
+        printf ("%s %s %s %s %0.f %s %s %s %s %s %s %0.f\n",\
+                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) }}' "$_THLOG" | \
+                 awk '{BEGiN} {for(i = 11; i < NF; i++) if($i != $12) \
+                {print "sshpass","-p","$PASS2","ssh","-T","$USER1""@"$1,\
+                "svctask","chthrottle","-iops",$12,"-name",$7,$6,"#","PREV:",\
+                $1,$2,$3,$4,$5,$10,$11; next }}' >> "$_THBSH"
+    awk '{if ($3 ~ /_T1/ && !/DONOT/ && $11 ~ /NA/) \
+    { $12=(($5>100 && $5<=200)?($5*8.5+0.005): \
+           ($5>200 && $5<=1000?($5*7.5+0.005): \
+           ($5>1000)?($5*5+0.005):850)); \
+        printf ("%s %s %s %s %0.f %s %s %s %s %s %s %0.f\n",\
+                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) }}' "$_THLOG" | \
+                 awk '{BEGiN} {for(i = 11; i < NF; i++) if($i != $12) \
+                {print "sshpass","-p","$PASS2","ssh","-T","$USER1""@"$1,\
+                 "svctask","mkthrottle","-type","vdisk","-iops",$12,"-vdisk",\
+                $3,"#","PREV:",$1,$2,$3,$4,$5,$10,$11; next }}' >> "$_THBSH"
+    awk ' {if ($3 ~ /_T2/ && !/DONOT|_T0|NA NA/) 
+    { $12=(($5>=500 && $5<1000)?($5*0.75+0.005): \
+           ($5>=1000 && $5<1500)?($5=750): \
+           ($5>=1500 && $5<2000)?($5=792): \
+           ($5>=2000 && $5<2500?($5=833):  \
+           ($5>=2500)?($5*0.375+0.005):375)); \
+        printf ("%s %s %s %s %0.f %s %s %s %s %s %s %0.f\n",\
+                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) }}' "$_THLOG" | \
+                 awk '{BEGiN} {for(i = 11; i < NF; i++) if($i != $12) \
+                {print "sshpass","-p","$PASS2","ssh","-T","$USER1""@"$1,\
+                "svctask","chthrottle","-iops",$12,"-name",$7,$6,"#","PREV:",\
+                $1,$2,$3,$4,$5,$10,$11; next }}' >> "$_THBSH"
+    awk ' {if ($3 ~ /_T2/ && !/DONOT/ && $11 ~ /NA/) \
+    { $12=(($5>=500 && $5<1000)?($5*0.75+0.005): \
+           ($5>=1000 && $5<1500)?($5=750): \
+           ($5>=1500 && $5<2000)?($5=792): \
+           ($5>=2000 && $5<2500?($5=833):  \
+           ($5>=2500)?($5*0.375+0.005):375)); \
+        printf ("%s %s %s %s %0.f %s %s %s %s %s %s %0.f\n",\
+                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) }}' "$_THLOG" | \
+                 awk '{BEGiN} {for(i = 11; i < NF; i++) if($i != $12) \
+                {print "sshpass","-p","$PASS2","ssh","-T","$USER1""@"$1,\
+                "svctask","mkthrottle","-type","vdisk","-iops",$12,"-vdisk",\
+                $3,"#","PREV:",$1,$2,$3,$4,$5,$10,$11; next }}' >> "$_THBSH"
+    awk '{if ($3 ~ /_T3/ && !/DONOT|_T0|NA NA/) \
+    { $12=(($5>=500 && $5<1000)?($5*0.16+0.005): \
+           ($5>=1000 && $5<1500)?($5=160): \
+           ($5>=1500 && $5<2000)?($5=187): \
+           ($5>=2000 && $5<2500)?($5=213): \
+           ($5>=2500 && $5<3000)?($5=240): \
+           ($5>=3000 && $5<3500)?($5=267): \
+           ($5>=3500 && $5<4000 ?($5=293): \
+           ($5>=4000)?($5*0.08+0.005):80)); \
+        printf ("%s %s %s %s %0.f %s %s %s %s %s %s %0.f\n", \
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) }}' "$_THLOG" | \
+                awk '{BEGiN} {for(i = 11; i < NF; i++) if($i != $12) \
+                {print "sshpass","-p","$PASS2","ssh","-T","$USER1""@"$1,\
+                "svctask","chthrottle","-iops",$12,"-name",$7,$6,"#","PREV:",\
+                $1,$2,$3,$4,$5,$10,$11; next }}' >> "$_THBSH"
+    awk '{if ($3 ~ /_T3/ && !/DONOT/ && $11 ~ /NA/) \
+    { $12=(($5>=500 && $5<1000)?($5*0.16+0.005): \
+           ($5>=1000 && $5<1500)?($5=160): \
+           ($5>=1500 && $5<2000)?($5=187): \
+           ($5>=2000 && $5<2500)?($5=213): \
+           ($5>=2500 && $5<3000)?($5=240): \
+           ($5>=3000 && $5<3500)?($5=267): \
+           ($5>=3500 && $5<4000 ?($5=293): \
+           ($5>=4000)?($5*0.08+0.005):80)); \
+        printf ("%s %s %s %s %0.f %s %s %s %s %s %s %0.f\n", \
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) }}' "$_THLOG" | \
+                awk '{BEGiN} {for(i = 11; i < NF; i++) if($i != $12) \
+                {print "sshpass","-p","$PASS2","ssh","-T","$USER1""@"$1,\
+                "svctask","chthrottle","-iops",$12,"-name",$7,$6,"#","PREV:",\
+                $1,$2,$3,$4,$5,$10,$11; next }}' >> "$_THBSH"
+    awk '{if ($3 ~ /_T0|DONOT/ && $11 !~ /NA/) \
+    { $12=(($12=0)); \
+        printf ("%s %s %s %s %0.f %s %s %s %s %s %s %s\n", \
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, $12) }}' "$_THLOG" | \
+                awk '{BEGiN} {for(i = 11; i < NF; i++) if($i != $12) \
+                {print "sshpass","-p","$PASS2","ssh","-T","$USER1""@"$1,\
+                "svctask","rmthrottle",$7"#","PREV:",$1,$2,$3,$4,\
+                $5,$10,$11; next }}'  >> "$_THBSH"
+    mv "$_THLOG" "$_THLOG"_"$ALTDAT"  >/dev/null 2>&1;
+    ebck
+}
+###
+function ob_gen () {
+    cnt=`grep '[ t]*$' "$_THBSH" | wc -l`
+    if [ "$cnt" -ne 0 ]; then
+        echo "..not empty, running.."
+        GEN1=$(echo | cat "$_THBSH" | sort -k6,6 -k8,8)
+        cat <<EOF  > "$_THRUN"
+#!/bin/bash -x
+############################
+USER1=xxx
+PASS2=xxx
+############################
+############################
+$GEN1
+############################
+EOF
+        mv "$_THBSH" "$_THBSH"_"$ALTDAT"  >/dev/null 2>&1; 
+    else 
+        echo " ..is empty, no values changed, nothing to execute.."
+        echo " ..removing.. "
+        rm "$_THBSH" >/dev/null 2>&1;
+        exit 1
+    fi
+}
+###
+function ob_exec () {
+    pushd "$SVCRUN"
+    chmod u+x *
+    time ./ibm_thr_C_"$CURDAT".sh;
+    shred -f -u "$_THRUN"  >/dev/null 2>&1;
+}
+###
+function exea () {
+    ob_info
+    ob_throttle
+    ob_vals
+    ob_gen
+    ob_exec
+}
+###
+function exed () {
+    pushd "$SVCLOG"
+    touch dummy_B_2020
+    echo "## FILENAME TIMESTAMP ##"
+    awk '{print FILENAME,$8,$9,$10,$11,$12,$13,$14,$15,$16, \
+    $17,$18,$19,$20,$21,22,$22,$23,$24,$25,$26,$27}' *_B_2020*
+}
+###
+function ebck () {
+for bck in "$SVCNFO"; do
+    tar czfP  "$SVCNFO"_"$ALTDAT".tar.gz "$SVCNFO" --remove-files >/dev/null 2>&1;
+done
+}
+###
+
+###
+usage() {
+    cat  << EOF
+    # " ____ ____ ____ ____ ____ ____ ____ ";
+    # "||I |||B |||M|||   |||  |||  |||  ||";
+    # "||  |||  ||| |||  |||  |||  |||  ||";
+    # "|/__\|/__\|/__\|/__\|/__\|/__\|/__\|";
+    # params: -throttle : execute check and potential throttle adjustment
+    # params: -see     : see new iops which were set for volumes in time
+EOF
+}
+###
+case "$1" in
+        -throttle)
+           	exea
+            ;; 
+        -see)
+           	exed
+            ;;
+        *)
+            echo $"Usage: $0 {SVC_THRO}"
+            usage
+            exit 1
+esac
